@@ -20,16 +20,25 @@ struct MainTabView: View {
                     Text("Dashboard")
                 }
             
-            GroupsView()
+            PeopleView()
                 .tabItem {
-                    Image(systemName: "person.3.fill")
-                    Text("Groups")
+                    Image(systemName: "person.2.fill")
+                    Text("People")
                 }
             
             AddBalanceTabView()
                 .tabItem {
-                    Image(systemName: "plus.circle.fill")
+                    Image(systemName: "plus")
+                        .environment(\.symbolVariants, .circle.fill)
+                        .font(.title2)
                     Text("Add")
+                }
+                .accentColor(.blue)
+            
+            GroupsView()
+                .tabItem {
+                    Image(systemName: "person.3.fill")
+                    Text("Groups")
                 }
             
             ProfileView()
@@ -39,82 +48,8 @@ struct MainTabView: View {
                 }
         }
         .accentColor(.blue)
-    }
-}
-
-struct DashboardView: View {
-    @Environment(\.modelContext) private var modelContext
-    @Query private var balances: [Balance]
-    @State private var showingAddBalance = false
-    
-    private var iOweBalances: [Balance] {
-        balances.filter { !$0.isOwedToMe && !$0.isSettled }
-    }
-    
-    private var owedToMeBalances: [Balance] {
-        balances.filter { $0.isOwedToMe && !$0.isSettled }
-    }
-    
-    private var totalIOwe: Double {
-        iOweBalances.reduce(0) { $0 + $1.amount }
-    }
-    
-    private var totalOwedToMe: Double {
-        owedToMeBalances.reduce(0) { $0 + $1.amount }
-    }
-    
-    var body: some View {
-        NavigationView {
-            ScrollView {
-                VStack(spacing: 20) {
-                    // Header Summary
-                    VStack(spacing: 16) {
-                        Text("PayBob")
-                            .font(.largeTitle)
-                            .fontWeight(.bold)
-                            .foregroundColor(.primary)
-                        
-                        HStack(spacing: 20) {
-                            SummaryCard(
-                                title: "I Owe",
-                                amount: totalIOwe,
-                                color: .red,
-                                icon: "arrow.up.circle.fill"
-                            )
-                            
-                            SummaryCard(
-                                title: "Owed to Me",
-                                amount: totalOwedToMe,
-                                color: .green,
-                                icon: "arrow.down.circle.fill"
-                            )
-                        }
-                    }
-                    .padding(.horizontal)
-                    
-                    // I Owe Section
-                    BalanceSection(
-                        title: "I Owe",
-                        balances: iOweBalances,
-                        emptyMessage: "You don't owe anyone money! 🎉",
-                        color: .red
-                    )
-                    
-                    // Owed to Me Section
-                    BalanceSection(
-                        title: "Owed to Me",
-                        balances: owedToMeBalances,
-                        emptyMessage: "Nobody owes you money right now",
-                        color: .green
-                    )
-                    
-                    Spacer(minLength: 100)
-                }
-            }
-            .navigationBarHidden(true)
-            .onAppear {
-                createSampleDataIfNeeded()
-            }
+        .onAppear {
+            createSampleDataIfNeeded()
         }
     }
     
@@ -124,8 +59,10 @@ struct DashboardView: View {
             let sampleBalances = [
                 Balance(amount: 25.0, description: "Coffee at Starbucks", isOwedToMe: false, otherPersonName: "Alex", tags: ["Food"]),
                 Balance(amount: 50.0, description: "Birthday gift", isOwedToMe: true, otherPersonName: "Sarah", tags: ["Birthday", "Gift"]),
-                Balance(amount: 120.0, description: "Dinner split", isOwedToMe: true, otherPersonName: "Mike", tags: ["Dinner"]),
-                Balance(amount: 15.0, description: "Uber ride", isOwedToMe: false, otherPersonName: "Emma", tags: ["Transportation"])
+                Balance(amount: 120.0, description: "Dinner split", isOwedToMe: true, otherPersonName: "Mike", tags: ["Food", "Dinner"]),
+                Balance(amount: 15.0, description: "Uber ride", isOwedToMe: false, otherPersonName: "Emma", tags: ["Transportation"]),
+                Balance(amount: 200.0, description: "Wedding gift", isOwedToMe: true, otherPersonName: "John", tags: ["Wedding", "Gift"]),
+                Balance(amount: 35.0, description: "Drinks night out", isOwedToMe: false, otherPersonName: "Lisa", tags: ["Drinks", "Entertainment"])
             ]
             
             for balance in sampleBalances {
@@ -135,6 +72,185 @@ struct DashboardView: View {
             try? modelContext.save()
         }
     }
+}
+
+struct DashboardView: View {
+    @Environment(\.modelContext) private var modelContext
+    @Query private var balances: [Balance]
+    @State private var selectedCategories: Set<String> = []
+    @State private var showingCategoryFilter = false
+    
+    var availableCategories: [String] {
+        let allCategories = Set(balances.flatMap { $0.tags })
+        return Array(allCategories).sorted()
+    }
+    
+    var filteredBalances: [Balance] {
+        if selectedCategories.isEmpty {
+            return balances
+        } else {
+            return balances.filter { balance in
+                !Set(balance.tags).isDisjoint(with: selectedCategories)
+            }
+        }
+    }
+    @State private var showingAddBalance = false
+    
+    private var iOweBalances: [Balance] {
+        filteredBalances.filter { !$0.isOwedToMe && !$0.isSettled }
+    }
+    
+    private var owedToMeBalances: [Balance] {
+        filteredBalances.filter { $0.isOwedToMe && !$0.isSettled }
+    }
+    
+    private var totalIOwe: Double {
+        iOweBalances.reduce(0) { $0 + $1.amount }
+    }
+    
+    private     var totalOwedToMe: Double {
+        owedToMeBalances.reduce(0) { $0 + $1.amount }
+    }
+    
+    var netBalance: Double {
+        totalOwedToMe - totalIOwe
+    }
+    
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                VStack(spacing: 20) {
+                    // Net Balance Header - Prominent Display
+                    VStack(spacing: 16) {
+                        Text("Net Balance")
+                            .font(.headline)
+                            .foregroundColor(.secondary)
+                        
+                        HStack {
+                            Text(netBalance >= 0 ? "+" : "")
+                            Text("$\(abs(netBalance), specifier: "%.2f")")
+                        }
+                        .font(.largeTitle)
+                        .fontWeight(.bold)
+                        .foregroundColor(netBalance >= 0 ? .green : .red)
+                        
+                        Text(netBalance >= 0 ? "You're owed more" : "You owe more")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding()
+                    .background(
+                        RoundedRectangle(cornerRadius: 16)
+                            .fill(netBalance >= 0 ? Color.green.opacity(0.1) : Color.red.opacity(0.1))
+                            .stroke(netBalance >= 0 ? Color.green.opacity(0.3) : Color.red.opacity(0.3), lineWidth: 1)
+                    )
+                    .padding(.horizontal)
+                    
+                    // Breakdown Summary
+                    HStack(spacing: 20) {
+                        SummaryCard(
+                            title: "I Owe",
+                            amount: totalIOwe,
+                            color: .red,
+                            icon: "arrow.up.circle.fill"
+                        )
+                        
+                        SummaryCard(
+                            title: "Owed to Me",
+                            amount: totalOwedToMe,
+                            color: .green,
+                            icon: "arrow.down.circle.fill"
+                        )
+                    }
+                    .padding(.horizontal)
+                    
+                    // Category Filter Section
+                    if !availableCategories.isEmpty {
+                        VStack(alignment: .leading, spacing: 12) {
+                            HStack {
+                                Text("Categories")
+                                    .font(.headline)
+                                    .foregroundColor(.primary)
+                                
+                                Spacer()
+                                
+                                Button(selectedCategories.isEmpty ? "Filter" : "Clear (\(selectedCategories.count))") {
+                                    if selectedCategories.isEmpty {
+                                        showingCategoryFilter.toggle()
+                                    } else {
+                                        selectedCategories.removeAll()
+                                    }
+                                }
+                                .font(.caption)
+                                .foregroundColor(.blue)
+                            }
+                            .padding(.horizontal)
+                            
+                            if !selectedCategories.isEmpty {
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    HStack(spacing: 8) {
+                                        ForEach(Array(selectedCategories), id: \.self) { category in
+                                            CategoryPill(category: category, isSelected: true) {
+                                                selectedCategories.remove(category)
+                                            }
+                                        }
+                                    }
+                                    .padding(.horizontal)
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Recent Balances Section
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text(selectedCategories.isEmpty ? "Recent Balances" : "Filtered Balances")
+                            .font(.title2)
+                            .fontWeight(.semibold)
+                            .padding(.horizontal)
+                        
+                        if filteredBalances.filter({ !$0.isSettled }).isEmpty {
+                            VStack(spacing: 12) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .font(.system(size: 50))
+                                    .foregroundColor(.green.opacity(0.6))
+                                
+                                Text(selectedCategories.isEmpty ? "No active balances! 🎉" : "No balances for selected categories")
+                                    .font(.body)
+                                    .foregroundColor(.secondary)
+                                    .multilineTextAlignment(.center)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(40)
+                            .background(Color.green.opacity(0.05))
+                            .cornerRadius(12)
+                            .padding(.horizontal)
+                        } else {
+                            LazyVStack(spacing: 8) {
+                                ForEach(filteredBalances.filter({ !$0.isSettled }).prefix(10), id: \.id) { balance in
+                                    NavigationLink(destination: BalanceDetailView(balance: balance)) {
+                                        BalanceRowView(balance: balance)
+                                    }
+                                    .buttonStyle(PlainButtonStyle())
+                                }
+                            }
+                            .padding(.horizontal)
+                        }
+                    }
+                    
+                    Spacer(minLength: 100)
+                }
+            }
+            .navigationTitle("Dashboard")
+            .sheet(isPresented: $showingCategoryFilter) {
+                CategoryFilterView(
+                    categories: availableCategories,
+                    selectedCategories: $selectedCategories
+                )
+            }
+        }
+    }
+    
+
 }
 
 struct SummaryCard: View {
@@ -208,7 +324,7 @@ struct BalanceSection: View {
                 .padding(.horizontal)
             } else {
                 LazyVStack(spacing: 8) {
-                    ForEach(balances, id: \.id) { balance in
+                    ForEach(filteredBalances.prefix(10), id: \.id) { balance in
                         NavigationLink(destination: BalanceDetailView(balance: balance)) {
                             BalanceRowView(balance: balance)
                         }
